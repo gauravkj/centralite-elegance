@@ -141,7 +141,7 @@ Do not place it inside `custom_components`.
     "51": "Family Room Fan"
   }
 }
-
+```
 
 ### Behavior
 
