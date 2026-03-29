@@ -13,12 +13,13 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class CentraliteData:
-    """Runtime data for Centralite."""
+    """Runtime data for the Centralite integration."""
+
     controller: object
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Set up the Centralite integration."""
+    """Set up Centralite."""
     return True
 
 
@@ -36,7 +37,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
+    """Unload a Centralite config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
