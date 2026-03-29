@@ -129,12 +129,6 @@ Do not place it inside `custom_components`.
 
 ### Example
 
-
-So that section becomes:
-
-```md
-### Example
-
 ```json
 {
   "loads": {
