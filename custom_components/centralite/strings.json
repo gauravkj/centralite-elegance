@@ -1,0 +1,15 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Centralite Elegance",
+        "description": "Set up the Centralite serial connection.",
+        "data": {
+          "port": "Serial port",
+          "include_switches": "Include switches",
+          "include_scenes": "Include scenes"
+        }
+      }
+    }
+  }
+}
