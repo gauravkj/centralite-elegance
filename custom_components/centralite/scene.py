@@ -1,71 +1,73 @@
-"""
-Support for Centralite scenes.
-"""
+from __future__ import annotations
 
 import logging
 import re
 
 from homeassistant.components.scene import Scene
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import CENTRALITE_CONTROLLER, LJDevice
-
-DEPENDENCIES = ["centralite"]
-
-ATTR_NUMBER = "number"
+from .const import CONF_EXCLUDE_NAMES, CONF_INCLUDE_SCENES, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-
-def setup_platform(hass, config, add_entities, discovery_info=None):
-    """Set up scenes for the Centralite platform."""
-    controller = hass.data[CENTRALITE_CONTROLLER]
-
-    devices = []
-
-    scenes_dict = controller.scenes()
-    for scene_id, name in scenes_dict.items():
-        name_on = f"{name}-ON"
-        name_off = f"{name}-OFF"
-
-        devices.append(CentraliteScene(controller, scene_id, name_on))
-        devices.append(CentraliteScene(controller, scene_id, name_off))
-
-    add_entities(devices)
+ATTR_NUMBER = "number"
 
 
-class CentraliteScene(LJDevice, Scene):
+def _is_ignored(name: str, excluded_prefixes: list[str]) -> bool:
+    """Return True if entity name should be ignored."""
+    return any(name.startswith(prefix) for prefix in excluded_prefixes)
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up Centralite scene entities from a config entry."""
+    if not entry.data.get(CONF_INCLUDE_SCENES, False):
+        return
+
+    data = hass.data[DOMAIN][entry.entry_id]
+    controller = data.controller
+    excluded_prefixes = entry.data.get(CONF_EXCLUDE_NAMES, [])
+
+    entities = []
+    for scene_id, name in controller.scenes().items():
+        if _is_ignored(name, excluded_prefixes):
+            continue
+        entities.append(CentraliteScene(controller, scene_id, f"{name}-ON"))
+        entities.append(CentraliteScene(controller, scene_id, f"{name}-OFF"))
+
+    async_add_entities(entities)
+
+
+class CentraliteScene(Scene):
     """Representation of a single Centralite scene."""
 
-    def __init__(self, controller, scene_id, name):
+    _attr_has_entity_name = True
+
+    def __init__(self, controller, scene_id: str, name: str) -> None:
         """Initialize the scene."""
-        self._lj = controller
+        self.controller = controller
         self._index = scene_id
-        self._name = name
+        self._attr_name = name
 
-        match = re.search(r"(ON|OFF)$", self._name, re.IGNORECASE)
-        matched_text = match.group(1).upper() if match else ""
-
-        self._attr_unique_id = f"elegance.scene.{self._index}.{matched_text.lower()}"
-
-        _LOGGER.debug("scene init name=%s", self._name)
-        _LOGGER.debug("scene init index=%s", self._index)
-        _LOGGER.debug("scene init unique_id=%s", self._attr_unique_id)
-
-        super().__init__(scene_id, controller, self._name)
-
-    @property
-    def extra_state_attributes(self):
-        """Return scene specific attributes."""
-        return {
-            ATTR_NUMBER: self._index
-        }
-
-    def activate(self):
-        """Activate the scene."""
-        _LOGGER.debug('Activating scene name="%s"', self._name)
-        self.controller.activate_scene(self._index, self._name)
+        match = re.search(r"(ON|OFF)$", name, re.IGNORECASE)
+        matched_text = match.group(1).lower() if match else "unknown"
+        self._attr_unique_id = f"elegance.scene.{scene_id}.{matched_text}"
 
     @property
     def should_poll(self):
         """Return False because scenes do not require polling."""
         return False
+
+    @property
+    def extra_state_attributes(self):
+        """Return scene specific attributes."""
+        return {ATTR_NUMBER: self._index}
+
+    def activate(self):
+        """Activate the scene."""
+        self.controller.activate_scene(self._index, self.name)
