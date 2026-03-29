@@ -104,14 +104,18 @@ class Centralite:
         self._thread.start()
         self._command_lock = threading.Lock()
 
-        self._load_names = {}
-        self._fan_names = {}
-        self._load_local_names()
+        self._load_names: dict[int, str] = {}
+        self._fan_names: dict[int, str] = {}
 
-    def _load_local_names(self):
-        """Load optional local names from /config/centralite_names.json."""
+    def load_local_names(self):
+        """Load optional local names from /config/centralite_names.json.
+
+        This is synchronous and should be called from the executor.
+        """
         if not NAMES_FILE.exists():
             _LOGGER.info("No Centralite names file found at %s, using defaults", NAMES_FILE)
+            self._load_names = {}
+            self._fan_names = {}
             return
 
         try:
@@ -139,6 +143,8 @@ class Centralite:
             )
         except Exception as err:
             _LOGGER.error("Failed to load Centralite names file %s: %s", NAMES_FILE, err)
+            self._load_names = {}
+            self._fan_names = {}
 
     def _send(self, command):
         """Send a command that does not require waiting for a reply."""
@@ -164,7 +170,7 @@ class Centralite:
         handler_params = ""
         line = str(event_name)
 
-        if line[0] == "^" and line[1] == "K":
+        if line and line[0] == "^" and len(line) >= 7 and line[1] == "K":
             load = event_name[2:5]
             level = event_name[5:7]
             event_name = "^K" + load
