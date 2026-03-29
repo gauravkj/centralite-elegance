@@ -142,7 +142,7 @@ class Centralite:
                 len(self._fan_names),
             )
         except Exception as err:
-            _LOGGER.error("Failed to load Centralite names file %s: %s", NAMES_FILE, err)
+            _LOGGER.warning("Failed to load Centralite names file %s: %s. Falling back to generic names.", NAMES_FILE, err)
             self._load_names = {}
             self._fan_names = {}
 
