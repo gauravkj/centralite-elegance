@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN, PLATFORMS
+from .const import CONF_PORT, DOMAIN, PLATFORMS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,7 +27,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Centralite from a config entry."""
     from .pycentralite import Centralite
 
-    controller = Centralite(entry.data["port"])
+    controller = Centralite(entry.data[CONF_PORT])
+
+    await hass.async_add_executor_job(controller.load_local_names)
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = CentraliteData(controller=controller)
