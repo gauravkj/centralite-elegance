@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import CONF_PORT, DOMAIN, PLATFORMS
 
@@ -27,7 +28,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Centralite from a config entry."""
     from .pycentralite import Centralite
 
-    controller = Centralite(entry.data[CONF_PORT])
+    try:
+        controller = Centralite(entry.data[CONF_PORT])
+    except Exception as err:
+        _LOGGER.error("Failed to connect to Centralite on %s: %s", entry.data[CONF_PORT], err)
+        raise ConfigEntryNotReady(
+            f"Failed to connect to Centralite on {entry.data[CONF_PORT]}"
+        ) from err
 
     await hass.async_add_executor_job(controller.load_local_names)
 
