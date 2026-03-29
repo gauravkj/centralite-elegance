@@ -7,16 +7,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_EXCLUDE_NAMES, DOMAIN
+from .const import CONF_INCLUDE_SWITCHES, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
 ATTR_NUMBER = "number"
-
-
-def _is_ignored(name: str, excluded_prefixes: list[str]) -> bool:
-    """Return True if entity name should be ignored."""
-    return any(name.startswith(prefix) for prefix in excluded_prefixes)
 
 
 async def async_setup_entry(
@@ -27,14 +22,8 @@ async def async_setup_entry(
     """Set up Centralite fan entities from a config entry."""
     data = hass.data[DOMAIN][entry.entry_id]
     controller = data.controller
-    excluded_prefixes = entry.data.get(CONF_EXCLUDE_NAMES, [])
 
-    entities = []
-    for device in controller.fans():
-        name = controller.get_load_name(device)
-        if not _is_ignored(name, excluded_prefixes):
-            entities.append(CentraliteFan(device, controller))
-
+    entities = [CentraliteFan(device, controller) for device in controller.fans()]
     async_add_entities(entities, True)
 
 
@@ -56,13 +45,7 @@ class CentraliteFan(FanEntity):
         self._percentage = 0
         self._state = False
 
-        name = controller.get_load_name(lj_device)
-        if name == "L051":
-            name = "Family Room Fan"
-        elif name.startswith("L"):
-            name = f"{name} Fan"
-
-        self._attr_name = name
+        self._attr_name = controller.get_fan_name(lj_device)
         self._attr_unique_id = f"elegance.fan.{lj_device}"
 
         controller.on_load_change(lj_device, self._on_load_changed)
@@ -70,6 +53,7 @@ class CentraliteFan(FanEntity):
     def _panel_to_percentage(self, panel_level: int) -> int:
         """Convert Centralite 0 to 99 level to HA percentage."""
         level = max(0, min(99, int(panel_level)))
+
         if level == 0:
             return 0
         if level <= 24:
@@ -83,6 +67,7 @@ class CentraliteFan(FanEntity):
     def _percentage_to_panel(self, percentage: int) -> int:
         """Convert HA percentage to Centralite stepped 0 to 99 level."""
         pct = max(0, min(100, int(percentage)))
+
         if pct == 0:
             return 0
         if pct <= 25:
