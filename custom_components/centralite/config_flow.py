@@ -26,7 +26,7 @@ class CentraliteConfigFlow(ConfigFlow, domain=DOMAIN):
             self._abort_if_unique_id_configured()
 
             return self.async_create_entry(
-                title=f"Centralite {user_input[CONF_PORT]}",
+                title=f"Centralite Elegance ({user_input[CONF_PORT].split('/')[-1]})",
                 data=user_input,
             )
 
