@@ -11,5 +11,17 @@
         }
       }
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Centralite options",
+        "description": "Adjust optional Centralite entity types.",
+        "data": {
+          "include_switches": "Include switches",
+          "include_scenes": "Include scenes"
+        }
+      }
+    }
   }
 }
