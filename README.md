@@ -26,6 +26,7 @@ Switches and scenes are included in the repository but should be treated as expe
 - Optional switch entities
 - Optional scene entities
 - Home Assistant config flow support
+- Home Assistant options flow support
 - HACS compatible repository layout
 - Optional local naming override file
 
@@ -73,6 +74,14 @@ You will be prompted for:
 If you have not tested switches and scenes yet:
 - leave `include_switches` disabled
 - leave `include_scenes` disabled
+
+## Updating options
+
+After the integration is added, you can change optional settings from:
+
+**Settings → Devices & Services → Centralite Elegance → Configure**
+
+This is useful for enabling or disabling experimental switch and scene support without removing and re-adding the integration.
 
 ## Serial connection
 
@@ -199,6 +208,7 @@ and restart Home Assistant.
 This repository has been modernized toward:
 - config entries
 - config flow based setup
+- options flow based updates
 - HACS based distribution
 - stable numeric unique IDs
 
