@@ -83,6 +83,10 @@ class CentraliteFan(FanEntity):
         return self._percentage
 
     @property
+    def speed_count(self):
+        return 4
+
+    @property
     def should_poll(self):
         return False
 
