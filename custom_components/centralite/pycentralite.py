@@ -80,6 +80,110 @@ class Centralite:
 
     SWITCHES_LIST = [1, 2, 3, 4]
 
+    LOAD_NAMES = {
+        1: "Kitchen Table",
+        2: "Laundry Lights",
+        3: "Kitchen Island",
+        4: "Dining Chandelier",
+        5: "Dining China",
+        6: "Sunroom Porch Lights",
+        7: "Kitchen Sink",
+        8: "Hallway Lights",
+        9: "Powder Room Ceiling Light",
+        10: "Office Ceiling Lights",
+        11: "Lower Patio Lights",
+        12: "Garage Lights",
+        13: "Kitchen Isle",
+        14: "Sun Room Ceiling Lights",
+        15: "Garage Exterior Lights",
+        16: "Garage Spot Lights",
+        17: "Kitchen Under Cabinet",
+        18: "Kitchen Above Cabinet",
+        19: "Equipment Room Light",
+        20: "Gym Lights",
+        21: "Patio Post Lights",
+        26: "Office Desk Lamp",
+        29: "Powder Room Exhaust Fan",
+        30: "Soffit Receptacles Lights",
+        31: "Hallway Main",
+        32: "Rear Spots Lights",
+        33: "Family Room Fireplace Lights",
+        34: "Tisya Room Ceiling Lights",
+        35: "Family Room Ceiling Lights",
+        36: "Master Bedroom Entry",
+        37: "Front Porch Recess Lights",
+        38: "Dining Room Spot Lights",
+        39: "Front Porch Lights",
+        40: "Front Porch Outlet Lights",
+        41: "Dining Sconce Lights",
+        42: "Walkin Closet Lights",
+        43: "Powder Room Vanity Lights",
+        44: "Living Room Main",
+        45: "Living Room Bay Window",
+        46: "Master Bath Vanity",
+        47: "Utility Room Lights",
+        48: "Dining Ceiling Lights",
+        73: "Office Etagere Lights",
+        74: "Living Room Etagere",
+        75: "Foyer Chandelier",
+        76: "Laundry Room Porch",
+        77: "Exterior Spot(R) Lights",
+        78: "Bath Exhaust Fan",
+        79: "Bath Sink Light",
+        80: "Aadya Room Ceiling Lights",
+        81: "Family Room Etagere Lights",
+        82: "Bath Ceiling Light",
+        83: "Master Bath Toilet",
+        84: "Master Bath Shower",
+        85: "Master Bath Sink Right",
+        86: "Master Bath Tub",
+        87: "Master Bath Main",
+        88: "Master Bath Sink Left",
+        89: "Bath Tub Light",
+        90: "Master Bedroom Main",
+        91: "Master Bedroom Attic Closet",
+        92: "Guest Room Ceiling Lights",
+        93: "Master Bath Fan",
+        94: "Master Bedroom Sitting",
+        95: "Master Bedroom Walkin Closet",
+        96: "Bath Vanity Lights",
+        121: "Lounge Kitchen",
+        122: "Lounge Bar",
+        123: "Movie Theater Seat",
+        124: "Powder Vanity",
+        125: "Powder Fan",
+        126: "Powder Main",
+        127: "Movie Theater Middle",
+        128: "Movie Theater Under Front",
+        129: "Lounge Main",
+        130: "Landscape 1 Lights",
+        131: "Movie Theater Front",
+        132: "Powder Entry",
+        133: "Game Room Storage Light",
+        134: "Foyer Accent Outlet Lights",
+        135: "Game Room Ceiling Lights",
+        136: "Movie Theater Pillars",
+        137: "Lounge Art",
+        138: "Lounge Sink",
+        139: "Movie Theater Step",
+        140: "Lounge Bar Display",
+        141: "Movie Theater Under Main",
+        142: "Lounge Under Cabinet",
+        143: "Landscape 2 Lights",
+        144: "Lounge Stairs",
+    }
+
+    FAN_NAMES = {
+        50: "Master Bedroom Fan",
+        51: "Family Room Fan",
+        52: "Master Bedroom Fan Sitting",
+        54: "Guest Room Fan",
+        55: "Aadya Room Fan",
+        56: "Tisya Room Fan",
+        59: "Sun Room Fan 1",
+        60: "Sun Room Fan 2",
+    }
+
     def __init__(self, url):
         _LOGGER.info("Start serial setup using %s", url)
         self._serial = serial.serial_for_url(
@@ -252,7 +356,10 @@ class Centralite:
         return "SW{0:03d}".format(index)
 
     def get_load_name(self, index):
-        return "L{0:03d}".format(index)
+        return self.LOAD_NAMES.get(index, f"L{index:03d}")
+
+    def get_fan_name(self, index):
+        return self.FAN_NAMES.get(index, f"L{index:03d} Fan")
 
     def loads(self):
         return Centralite.LOADS_LIST
