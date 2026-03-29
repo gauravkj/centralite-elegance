@@ -129,6 +129,7 @@ Do not place it inside `custom_components`.
 
 ### Example
 
+
 ```json
 {
   "loads": {
