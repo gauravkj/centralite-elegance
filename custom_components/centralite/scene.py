@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import re
 
 from homeassistant.components.scene import Scene
@@ -8,16 +7,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_EXCLUDE_NAMES, CONF_INCLUDE_SCENES, DOMAIN
-
-_LOGGER = logging.getLogger(__name__)
+from .const import CONF_INCLUDE_SCENES, DOMAIN
 
 ATTR_NUMBER = "number"
-
-
-def _is_ignored(name: str, excluded_prefixes: list[str]) -> bool:
-    """Return True if entity name should be ignored."""
-    return any(name.startswith(prefix) for prefix in excluded_prefixes)
 
 
 async def async_setup_entry(
@@ -26,17 +18,17 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Centralite scene entities from a config entry."""
-    if not entry.data.get(CONF_INCLUDE_SCENES, False):
+    if not entry.options.get(
+        CONF_INCLUDE_SCENES,
+        entry.data.get(CONF_INCLUDE_SCENES, False),
+    ):
         return
 
     data = hass.data[DOMAIN][entry.entry_id]
     controller = data.controller
-    excluded_prefixes = entry.data.get(CONF_EXCLUDE_NAMES, [])
 
     entities = []
     for scene_id, name in controller.scenes().items():
-        if _is_ignored(name, excluded_prefixes):
-            continue
         entities.append(CentraliteScene(controller, scene_id, f"{name}-ON"))
         entities.append(CentraliteScene(controller, scene_id, f"{name}-OFF"))
 
