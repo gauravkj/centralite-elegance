@@ -19,10 +19,10 @@ class CentraliteConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    async def async_step_user(self, user_input: dict | None = None) -> FlowResult:
+    async def async_step_user(
+        self, user_input: dict | None = None
+    ) -> FlowResult:
         """Handle the initial step."""
-        errors: dict[str, str] = {}
-
         if user_input is not None:
             await self.async_set_unique_id(user_input[CONF_PORT])
             self._abort_if_unique_id_configured()
@@ -42,5 +42,4 @@ class CentraliteConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Optional(CONF_EXCLUDE_NAMES, default=[]): [str],
                 }
             ),
-            errors=errors,
         )
