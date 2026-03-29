@@ -1,14 +1,15 @@
+from __future__ import annotations
+
 import logging
-import serial
-import threading
 import sys
+import threading
+
+import serial
 
 WAIT_DELAY = 2
 
 _LOGGER = logging.getLogger(__name__)
 
-# Fan loads to expose in Home Assistant as fan entities.
-# These load numbers are excluded from normal light loads.
 FAN_LOADS = {50, 51, 52, 54, 55, 56, 59, 60}
 
 
@@ -29,12 +30,10 @@ class CentraliteThread(threading.Thread):
             _LOGGER.debug("Incoming serial line: %s", line)
 
             if len(line) == 5 and (line[0] == "P" or line[0] == "R"):
-                _LOGGER.debug("Matches P or R event: %s", line)
                 self._notify_event(line)
                 continue
 
             if len(line) == 7 and line[0] == "^" and line[1] == "K":
-                _LOGGER.debug("Matches ^K load change event: %s", line)
                 self._notify_event(line)
                 continue
 
@@ -60,7 +59,6 @@ class CentraliteThread(threading.Thread):
                 _LOGGER.warning("Readline hit 100 chars, forcing break: %s", output)
                 break
 
-        _LOGGER.debug("Readline output: %s", output)
         return output
 
     def get_response(self):
@@ -106,22 +104,16 @@ class Centralite:
     def _send(self, command):
         """Send a command that does not require waiting for a reply."""
         with self._command_lock:
-            _LOGGER.debug('Send via _send: "%s"', command)
             self._serial.write(command.encode("utf-8"))
 
     def _sendrecv(self, command):
         """Send a command and wait for a single reply line."""
         with self._command_lock:
-            _LOGGER.debug('Send via _sendrecv: "%s"', command)
             self._serial.write(command.encode("utf-8"))
-
-            result = self._thread.get_response()
-            _LOGGER.debug('Recv via _sendrecv: "%s"', result)
-            return result
+            return self._thread.get_response()
 
     def _add_event(self, event_name, handler):
         """Register an event handler for a Centralite event name."""
-        _LOGGER.debug('Register event handler for "%s"', event_name)
         event_list = self._events.get(event_name)
         if event_list is None:
             event_list = []
@@ -130,8 +122,6 @@ class Centralite:
 
     def _notify_event(self, event_name):
         """Dispatch a spontaneous Centralite event to registered handlers."""
-        _LOGGER.debug('Event "%s"', event_name)
-
         handler_params = ""
         line = str(event_name)
 
@@ -139,39 +129,17 @@ class Centralite:
             load = event_name[2:5]
             level = event_name[5:7]
             event_name = "^K" + load
-            _LOGGER.debug("Updated event name: %s", event_name)
-            _LOGGER.debug("Load %s Level %s", load, level)
             handler_params = level
 
-        elif line[0] == "P" or line[0] == "R":
-            _LOGGER.debug("Switch event: %s", line)
-
         event_list = self._events.get(event_name)
-        _LOGGER.debug("Event handler list: %s", event_list)
-        _LOGGER.debug("Handler params: %s", handler_params)
 
         if event_list is not None:
             for handler in event_list:
-                _LOGGER.debug("Calling handler %s", handler)
                 try:
                     handler(handler_params)
                 except Exception:
                     error_msg = sys.exc_info()[0]
                     _LOGGER.debug("Handler failed with error: %s", error_msg)
-        else:
-            _LOGGER.debug("No handler registered for event %s", event_name)
-
-    def _hex2bits(self, response, input_first, input_last, output_first):
-        """Convert pairs of hex digits into a bit indexed dictionary."""
-        output = {}
-        output_number = output_first
-        for digit in range(input_first, input_last, 2):
-            digit_value = int(response[digit:digit + 2], 16)
-            for bit in range(0, 8):
-                bit_value = (digit_value & (1 << bit)) != 0
-                output[output_number] = bit_value
-                output_number += 1
-        return output
 
     def _hex2bin_loads(self, response):
         """Convert a load status hex response into a binary string."""
@@ -235,100 +203,65 @@ class Centralite:
 
         return "".join(binary_bytes)
 
-    def on_load_activated(self, index, handler):
-        self._add_event("N{0:03d}".format(index), handler)
-
-    def on_load_deactivated(self, index, handler):
-        self._add_event("F{0:03d}".format(index), handler)
-
     def on_load_change(self, index, handler):
         self._add_event("^K{0:03}".format(index), handler)
 
     def on_switch_pressed(self, index, handler):
-        """Register a switch pressed event handler."""
-        _LOGGER.debug("Register switch press handler for index %s", index)
         self._add_event("P{0:04d}".format(index), handler)
 
     def on_switch_released(self, index, handler):
-        """Register a switch released event handler."""
-        _LOGGER.debug("Register switch release handler for index %s", index)
         self._add_event("R{0:04d}".format(index), handler)
 
     def activate_load(self, index):
-        """Turn a load on using ^Axxx."""
         self._send("^A{0:03d}".format(index))
 
     def deactivate_load(self, index):
-        """Turn a load off using ^Bxxx."""
         self._send("^B{0:03d}".format(index))
 
     def activate_scene(self, index, scene_name):
-        """Trigger a Centralite scene."""
-        _LOGGER.debug("activate_scene index=%s scene_name=%s", index, scene_name)
         index = int(index)
-
         if "-ON" in scene_name.upper():
             self._send("^C{0:03d}".format(index))
         elif "-OFF" in scene_name.upper():
             self._send("^D{0:03d}".format(index))
 
     def activate_load_at(self, index, level, rate):
-        """Set a load to a specific level and rate using ^ExxxLLRR."""
         self._send("^E{0:03d}{1:02d}{2:02d}".format(index, level, rate))
 
     def get_load_level(self, index):
-        """Get a single load level from the panel using ^Fxxx."""
         response = self._sendrecv("^F{0:03d}".format(index))
         return int(response)
 
-    def set_all_load_states(self, _incoming_hex):
-        """Placeholder for bulk load state processing."""
-        _LOGGER.debug("set_all_load_states incoming_hex=%s", _incoming_hex)
-        return
-
     def get_all_load_states(self):
-        """Get bulk load states using ^G."""
-        _LOGGER.debug("get_all_load_states")
         response = self._sendrecv("^G")
         return self._hex2bin_loads(response)
 
     def get_all_switch_states(self):
-        """Get bulk switch states using ^H."""
-        _LOGGER.debug("get_all_switch_states")
         response = self._sendrecv("^H")
         return self._hex2bin_switches(response)
 
     def press_switch(self, index):
-        """Simulate a switch press and immediate release."""
         self._send("^I{0:03d}".format(index))
         self._send("^J{0:03d}".format(index))
 
     def release_switch(self, index):
-        """Simulate a switch release sequence."""
-        _LOGGER.debug("release_switch index=%s", index)
         self._send("^I{0:03d}".format(index))
         self._send("^J{0:03d}".format(index))
 
     def get_switch_name(self, index):
-        """Return the HA switch entity name."""
         return "SW{0:03d}".format(index)
 
     def get_load_name(self, index):
-        """Return the HA load entity name."""
         return "L{0:03d}".format(index)
 
     def loads(self):
-        """Return Centralite loads to expose as HA lights."""
         return Centralite.LOADS_LIST
 
     def button_switches(self):
-        """Return Centralite switch inputs to expose in HA."""
         return Centralite.SWITCHES_LIST
 
     def scenes(self):
-        """Return Centralite scenes to expose in HA."""
         return Centralite.ACTIVE_SCENES_DICT
 
     def fans(self):
-        """Return Centralite fan loads to expose in HA."""
         return Centralite.FANS_LIST
