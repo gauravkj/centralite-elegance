@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
+
 from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 ATTR_NUMBER = "number"
 
@@ -20,7 +24,7 @@ async def async_setup_entry(
     controller = data.controller
 
     entities = [CentraliteFan(device, controller) for device in controller.fans()]
-    async_add_entities(entities, True)
+    async_add_entities(entities, False)
 
 
 class CentraliteFan(FanEntity):
@@ -33,6 +37,7 @@ class CentraliteFan(FanEntity):
         | FanEntityFeature.TURN_OFF
     )
     _attr_speed_count = 4
+    _attr_should_poll = False
 
     def __init__(self, lj_device: int, controller) -> None:
         self.lj_device = lj_device
@@ -87,52 +92,61 @@ class CentraliteFan(FanEntity):
         return 4
 
     @property
-    def should_poll(self):
-        return False
-
-    @property
     def extra_state_attributes(self):
         return {ATTR_NUMBER: self.lj_device}
 
-    def turn_on(self, percentage=None, preset_mode=None, **kwargs):
-        if percentage is None:
-            panel_level = 99
-            self._percentage = 100
-        else:
+    async def async_turn_on(self, percentage=None, preset_mode=None, **kwargs):
+        try:
+            if percentage is None:
+                panel_level = 99
+            else:
+                panel_level = self._percentage_to_panel(percentage)
+
+            await self.hass.async_add_executor_job(
+                self.controller.activate_load_at,
+                self.lj_device,
+                panel_level,
+                1,
+            )
+        except Exception as err:
+            _LOGGER.warning(
+                "Failed turning on Centralite fan %s: %s",
+                self.lj_device,
+                err,
+            )
+
+    async def async_set_percentage(self, percentage):
+        try:
             panel_level = self._percentage_to_panel(percentage)
-            self._percentage = self._panel_to_percentage(panel_level)
 
-        if panel_level == 0:
-            self.controller.deactivate_load(self.lj_device)
-            self._percentage = 0
-            self._state = False
-        else:
-            self.controller.activate_load_at(self.lj_device, panel_level, 1)
-            self._state = True
+            if panel_level == 0:
+                await self.hass.async_add_executor_job(
+                    self.controller.deactivate_load,
+                    self.lj_device,
+                )
+            else:
+                await self.hass.async_add_executor_job(
+                    self.controller.activate_load_at,
+                    self.lj_device,
+                    panel_level,
+                    1,
+                )
+        except Exception as err:
+            _LOGGER.warning(
+                "Failed setting Centralite fan %s percentage: %s",
+                self.lj_device,
+                err,
+            )
 
-        self.schedule_update_ha_state()
-
-    def set_percentage(self, percentage):
-        panel_level = self._percentage_to_panel(percentage)
-
-        if panel_level == 0:
-            self.controller.deactivate_load(self.lj_device)
-            self._percentage = 0
-            self._state = False
-        else:
-            self.controller.activate_load_at(self.lj_device, panel_level, 1)
-            self._percentage = self._panel_to_percentage(panel_level)
-            self._state = True
-
-        self.schedule_update_ha_state()
-
-    def turn_off(self, **kwargs):
-        self.controller.deactivate_load(self.lj_device)
-        self._percentage = 0
-        self._state = False
-        self.schedule_update_ha_state()
-
-    def update(self):
-        level = int(self.controller.get_load_level(self.lj_device))
-        self._percentage = self._panel_to_percentage(level)
-        self._state = self._percentage != 0
+    async def async_turn_off(self, **kwargs):
+        try:
+            await self.hass.async_add_executor_job(
+                self.controller.deactivate_load,
+                self.lj_device,
+            )
+        except Exception as err:
+            _LOGGER.warning(
+                "Failed turning off Centralite fan %s: %s",
+                self.lj_device,
+                err,
+            )
