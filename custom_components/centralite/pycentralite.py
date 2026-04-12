@@ -5,10 +5,11 @@ import logging
 import sys
 import threading
 from pathlib import Path
+from queue import Empty, Queue
 
 import serial
 
-WAIT_DELAY = 2
+WAIT_DELAY = 5
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -22,32 +23,39 @@ class CentraliteThread(threading.Thread):
     def __init__(self, serial_port, notify_event):
         super().__init__(name="CentraliteThread", daemon=True)
         self._serial = serial_port
-        self._lastline = None
-        self._recv_event = threading.Event()
         self._notify_event = notify_event
+        self._responses: Queue[str] = Queue()
+        self._stop_event = threading.Event()
 
     def run(self):
         """Continuously read incoming serial lines."""
-        while True:
-            line = self._readline()
-            _LOGGER.debug("Incoming serial line: %s", line)
+        while not self._stop_event.is_set():
+            try:
+                line = self._readline()
+                if not line:
+                    continue
 
-            if len(line) == 5 and (line[0] == "P" or line[0] == "R"):
-                self._notify_event(line)
-                continue
+                _LOGGER.debug("Incoming serial line: %s", line)
 
-            if len(line) == 7 and line[0] == "^" and line[1] == "K":
-                self._notify_event(line)
-                continue
+                if len(line) == 5 and line[0] in ("P", "R"):
+                    self._notify_event(line)
+                    continue
 
-            self._lastline = line
-            self._recv_event.set()
+                if len(line) == 7 and line.startswith("^K"):
+                    self._notify_event(line)
+                    continue
+
+                self._responses.put(line)
+
+            except Exception as err:
+                _LOGGER.error("Centralite reader error: %s", err)
+                self._stop_event.wait(1.0)
 
     def _readline(self):
         """Read one CR terminated line from the serial port."""
         output = ""
 
-        while True:
+        while not self._stop_event.is_set():
             byte = self._serial.read(size=1)
 
             if not byte:
@@ -64,11 +72,24 @@ class CentraliteThread(threading.Thread):
 
         return output
 
-    def get_response(self):
+    def stop(self):
+        """Stop the reader thread."""
+        self._stop_event.set()
+
+    def clear_responses(self):
+        """Discard any queued command responses."""
+        while True:
+            try:
+                self._responses.get_nowait()
+            except Empty:
+                break
+
+    def get_response(self, timeout=WAIT_DELAY):
         """Wait briefly for the next command response line."""
-        self._recv_event.wait(timeout=WAIT_DELAY)
-        self._recv_event.clear()
-        return self._lastline
+        try:
+            return self._responses.get(timeout=timeout)
+        except Empty:
+            return None
 
 
 class Centralite:
@@ -90,6 +111,8 @@ class Centralite:
             baudrate=19200,
             parity=serial.PARITY_NONE,
             stopbits=serial.STOPBITS_ONE,
+            timeout=2.0,
+            write_timeout=2.0,
         )
         _LOGGER.info(
             "CENTRALITE SERIAL OPENED url=%s baud=%s parity=%s stopbits=%s",
@@ -107,11 +130,17 @@ class Centralite:
         self._load_names: dict[int, str] = {}
         self._fan_names: dict[int, str] = {}
 
-    def load_local_names(self):
-        """Load optional local names from /config/centralite_names.json.
+    def close(self):
+        """Clean shutdown."""
+        self._thread.stop()
+        self._thread.join(timeout=2.0)
+        try:
+            self._serial.close()
+        except Exception:
+            pass
 
-        This is synchronous and should be called from the executor.
-        """
+    def load_local_names(self):
+        """Load optional local names from /config/centralite_names.json."""
         if not NAMES_FILE.exists():
             _LOGGER.info("No Centralite names file found at %s, using defaults", NAMES_FILE)
             self._load_names = {}
@@ -142,20 +171,29 @@ class Centralite:
                 len(self._fan_names),
             )
         except Exception as err:
-            _LOGGER.warning("Failed to load Centralite names file %s: %s. Falling back to generic names.", NAMES_FILE, err)
+            _LOGGER.warning(
+                "Failed to load Centralite names file %s: %s. Falling back to generic names.",
+                NAMES_FILE,
+                err,
+            )
             self._load_names = {}
             self._fan_names = {}
 
     def _send(self, command):
         """Send a command that does not require waiting for a reply."""
         with self._command_lock:
+            _LOGGER.debug("Centralite send sending command: %s", command)
             self._serial.write(command.encode("utf-8"))
 
     def _sendrecv(self, command):
         """Send a command and wait for a single reply line."""
         with self._command_lock:
+            self._thread.clear_responses()
+            _LOGGER.debug("Centralite sendrecv sending command: %s", command)
             self._serial.write(command.encode("utf-8"))
-            return self._thread.get_response()
+            response = self._thread.get_response()
+            _LOGGER.debug("Centralite sendrecv response for %s: %s", command, response)
+            return response
 
     def _add_event(self, event_name, handler):
         """Register an event handler for a Centralite event name."""
@@ -164,6 +202,15 @@ class Centralite:
             event_list = []
             self._events[event_name] = event_list
         event_list.append(handler)
+
+        def _remove():
+            handlers = self._events.get(event_name, [])
+            if handler in handlers:
+                handlers.remove(handler)
+            if not handlers:
+                self._events.pop(event_name, None)
+
+        return _remove
 
     def _notify_event(self, event_name):
         """Dispatch a spontaneous Centralite event to registered handlers."""
@@ -179,7 +226,7 @@ class Centralite:
         event_list = self._events.get(event_name)
 
         if event_list is not None:
-            for handler in event_list:
+            for handler in list(event_list):
                 try:
                     handler(handler_params)
                 except Exception:
@@ -249,13 +296,13 @@ class Centralite:
         return "".join(binary_bytes)
 
     def on_load_change(self, index, handler):
-        self._add_event("^K{0:03}".format(index), handler)
+        return self._add_event("^K{0:03}".format(index), handler)
 
     def on_switch_pressed(self, index, handler):
-        self._add_event("P{0:04d}".format(index), handler)
+        return self._add_event("P{0:04d}".format(index), handler)
 
     def on_switch_released(self, index, handler):
-        self._add_event("R{0:04d}".format(index), handler)
+        return self._add_event("R{0:04d}".format(index), handler)
 
     def activate_load(self, index):
         self._send("^A{0:03d}".format(index))
@@ -275,6 +322,8 @@ class Centralite:
 
     def get_load_level(self, index):
         response = self._sendrecv("^F{0:03d}".format(index))
+        if response is None:
+            raise TimeoutError(f"No Centralite response for load {index}")
         return int(response)
 
     def get_all_load_states(self):
@@ -303,13 +352,13 @@ class Centralite:
         return self._fan_names.get(index, f"L{index:03d} Fan")
 
     def loads(self):
-        return Centralite.LOADS_LIST
+        return self.LOADS_LIST
 
     def button_switches(self):
-        return Centralite.SWITCHES_LIST
+        return self.SWITCHES_LIST
 
     def scenes(self):
-        return Centralite.ACTIVE_SCENES_DICT
+        return self.ACTIVE_SCENES_DICT
 
     def fans(self):
-        return Centralite.FANS_LIST
+        return self.FANS_LIST
