@@ -14,7 +14,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import CONF_EXCLUDE_NAMES, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
-
 ATTR_NUMBER = "number"
 
 
@@ -33,13 +32,12 @@ async def async_setup_entry(
     controller = data.controller
     excluded_prefixes = entry.data.get(CONF_EXCLUDE_NAMES, [])
 
-    entities = []
-    for device in controller.loads():
-        name = controller.get_load_name(device)
-        if not _is_ignored(name, excluded_prefixes):
-            entities.append(CentraliteLight(device, controller))
-
-    async_add_entities(entities, True)
+    entities = [
+        CentraliteLight(device, controller, entry)
+        for device in controller.loads()
+        if not _is_ignored(controller.get_load_name(device), excluded_prefixes)
+    ]
+    async_add_entities(entities, False)
 
 
 class CentraliteLight(LightEntity):
@@ -48,68 +46,89 @@ class CentraliteLight(LightEntity):
     _attr_has_entity_name = True
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
     _attr_color_mode = ColorMode.BRIGHTNESS
+    _attr_should_poll = False
 
-    def __init__(self, lj_device: int, controller) -> None:
+    def __init__(self, lj_device: int, controller, entry: ConfigEntry) -> None:
         """Initialize the HA light entity."""
         self.lj_device = lj_device
         self.controller = controller
+
         self._attr_name = controller.get_load_name(lj_device)
         self._attr_unique_id = f"elegance.light.{lj_device}"
+
         self._brightness = 0
         self._state = False
 
         controller.on_load_change(lj_device, self._on_load_changed)
 
+    def _snap_brightness_to_panel_level(self, ha_brightness: int) -> int:
+        """Snap HA brightness to stable Centralite panel levels."""
+        if ha_brightness <= 0:
+            return 0
+        if ha_brightness <= 63:
+            return 30
+        if ha_brightness <= 127:
+            return 50
+        if ha_brightness <= 191:
+            return 75
+        return 99
+
+    def _panel_to_ha_brightness(self, panel_level: int) -> int:
+        """Convert Centralite 0..99 to HA 0..255."""
+        level = max(0, min(99, int(panel_level)))
+        return int(level / 99 * 255)
+
     def _on_load_changed(self, new_brightness) -> None:
         """Handle a spontaneous load level update from Centralite."""
         panel_level = max(0, min(99, int(new_brightness)))
-        self._brightness = int(panel_level / 99 * 255)
-        self._state = self._brightness != 0
+        self._brightness = self._panel_to_ha_brightness(panel_level)
+        self._state = panel_level != 0
         self.schedule_update_ha_state()
 
     @property
     def brightness(self):
-        """Return brightness using Home Assistant's 0 to 255 scale."""
         return self._brightness
 
     @property
     def is_on(self):
-        """Return True if the light is on."""
-        return self._brightness != 0
-
-    @property
-    def should_poll(self):
-        """Return False because Centralite pushes updates."""
-        return False
+        return self._state
 
     @property
     def extra_state_attributes(self):
-        """Expose the Centralite load number."""
         return {ATTR_NUMBER: self.lj_device}
 
-    def turn_on(self, **kwargs):
+    async def async_turn_on(self, **kwargs) -> None:
         """Turn on the light."""
-        if ATTR_BRIGHTNESS in kwargs:
-            ha_brightness = kwargs[ATTR_BRIGHTNESS]
-            panel_level = int(ha_brightness / 255 * 99)
-            self.controller.activate_load_at(self.lj_device, panel_level, 1)
-            self._brightness = ha_brightness
-        else:
-            self.controller.activate_load(self.lj_device)
-            self._brightness = 255
+        try:
+            if ATTR_BRIGHTNESS in kwargs:
+                ha_brightness = kwargs[ATTR_BRIGHTNESS]
+                panel_level = self._snap_brightness_to_panel_level(ha_brightness)
+            else:
+                panel_level = 99
 
-        self._state = True
-        self.schedule_update_ha_state()
+            await self.hass.async_add_executor_job(
+                self.controller.activate_load_at,
+                self.lj_device,
+                panel_level,
+                1,
+            )
+        except Exception as err:
+            _LOGGER.warning(
+                "Failed turning on Centralite load %s: %s",
+                self.lj_device,
+                err,
+            )
 
-    def turn_off(self, **kwargs):
+    async def async_turn_off(self, **kwargs) -> None:
         """Turn off the light."""
-        self.controller.deactivate_load(self.lj_device)
-        self._state = False
-        self._brightness = 0
-        self.schedule_update_ha_state()
-
-    def update(self):
-        """Read the current load level from Centralite."""
-        level = max(0, min(99, int(self.controller.get_load_level(self.lj_device))))
-        self._brightness = int(level / 99 * 255)
-        self._state = self._brightness != 0
+        try:
+            await self.hass.async_add_executor_job(
+                self.controller.deactivate_load,
+                self.lj_device,
+            )
+        except Exception as err:
+            _LOGGER.warning(
+                "Failed turning off Centralite load %s: %s",
+                self.lj_device,
+                err,
+            )
